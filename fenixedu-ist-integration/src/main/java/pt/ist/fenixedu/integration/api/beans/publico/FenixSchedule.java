@@ -17,12 +17,16 @@
  * along with FenixEdu IST Integration.  If not, see <http://www.gnu.org/licenses/>.
  */
 package pt.ist.fenixedu.integration.api.beans.publico;
+import org.fenixedu.academic.domain.student.Registration;
+import org.fenixedu.academic.domain.student.Student;
+
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+
 
 import org.fenixedu.academic.domain.CourseLoad;
 import org.fenixedu.academic.domain.ExecutionCourse;
@@ -136,11 +140,25 @@ public class FenixSchedule {
         String name;
         FenixShiftOccupation occupation;
         List<String> types = new ArrayList<>();
+
+        public List<Integer> getStudentSet() {
+            return studentSet;
+        }
+
+        public void setStudentSet(List<Integer> studentSet) {
+            this.studentSet = studentSet;
+        }
+
+        List<Integer>  studentSet  = new ArrayList<>();
         List<FenixLessonOccurence> lessons = new ArrayList<>();
         List<FenixSpace.Room> rooms = new ArrayList<>();
 
         public FenixShift(final Shift shift) {
             this.name = shift.getNome();
+            for (Registration r : shift.getStudentsSet()) {
+                this.studentSet.add( r.getStudent().getNumber());
+            }
+
             setOccupation(new FenixShiftOccupation(shift.getStudentsSet().size(), shift.getLotacao()));
             for (CourseLoad courseLoad : shift.getCourseLoadsSet()) {
                 final ShiftType type = courseLoad.getType();

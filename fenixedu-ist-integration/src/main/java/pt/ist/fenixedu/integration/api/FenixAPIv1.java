@@ -1,23 +1,221 @@
 /**
  * Copyright © 2013 Instituto Superior Técnico
- *
+ * <p>
  * This file is part of FenixEdu IST Integration.
- *
+ * <p>
  * FenixEdu IST Integration is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- *
+ * <p>
  * FenixEdu IST Integration is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU Lesser General Public License for more details.
- *
+ * <p>
  * You should have received a copy of the GNU Lesser General Public License
  * along with FenixEdu IST Integration.  If not, see <http://www.gnu.org/licenses/>.
  */
 package pt.ist.fenixedu.integration.api;
 
+import static org.fenixedu.academic.dto.SummariesManagementBean.SummaryType.NORMAL_SUMMARY;
+import org.fenixedu.academic.domain.curricularRules.*;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.math.BigDecimal;
+import java.util.ArrayList;
+import org.fenixedu.academic.domain.curricularRules.CurricularRule;
+import java.util.Base64;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Date;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.function.Consumer;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
+import javax.servlet.ServletContext;
+import javax.servlet.UnavailableException;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import javax.ws.rs.DELETE;
+import javax.ws.rs.GET;
+import javax.ws.rs.POST;
+import javax.ws.rs.PUT;
+import javax.ws.rs.Path;
+import javax.ws.rs.PathParam;
+import javax.ws.rs.Produces;
+import javax.ws.rs.QueryParam;
+import javax.ws.rs.WebApplicationException;
+import javax.ws.rs.core.Context;
+import javax.ws.rs.core.Response;
+import javax.ws.rs.core.Response.Status;
+import javax.ws.rs.core.StreamingOutput;
+
+import org.fenixedu.academic.domain.AdHocEvaluation;
+import org.fenixedu.academic.domain.Attends;
+import org.fenixedu.academic.domain.CompetenceCourse;
+import org.fenixedu.academic.domain.Coordinator;
+import org.fenixedu.academic.domain.CurricularCourse;
+import org.fenixedu.academic.domain.Degree;
+import org.fenixedu.academic.domain.DegreeCurricularPlan;
+import org.fenixedu.academic.domain.DegreeInfo;
+import org.fenixedu.academic.domain.Enrolment;
+import org.fenixedu.academic.domain.Evaluation;
+import org.fenixedu.academic.domain.Exam;
+import org.fenixedu.academic.domain.Evaluation;
+import org.fenixedu.academic.domain.CurricularCourseScope;
+import org.fenixedu.academic.domain.CurricularYear;
+import org.fenixedu.academic.domain.ExecutionCourse;
+import org.fenixedu.academic.domain.ExecutionDegree;
+import org.fenixedu.academic.domain.ExecutionInterval;
+import org.fenixedu.academic.domain.ExecutionSemester;
+import org.fenixedu.academic.domain.ExecutionYear;
+import org.fenixedu.academic.domain.Grouping;
+import org.fenixedu.academic.domain.Lesson;
+import org.fenixedu.academic.domain.LessonInstance;
+import org.fenixedu.academic.domain.Person;
+import org.fenixedu.academic.domain.Photograph;
+import org.fenixedu.academic.domain.Professorship;
+import org.fenixedu.academic.domain.Project;
+import org.fenixedu.academic.domain.Shift;
+import org.fenixedu.academic.domain.ShiftType;
+import org.fenixedu.academic.domain.StudentCurricularPlan;
+import org.fenixedu.academic.domain.Summary;
+import org.fenixedu.academic.domain.Teacher;
+import org.fenixedu.academic.domain.WrittenEvaluation;
+import org.fenixedu.academic.domain.WrittenEvaluationEnrolment;
+import org.fenixedu.academic.domain.accessControl.ActiveStudentsGroup;
+import org.fenixedu.academic.domain.accessControl.ActiveTeachersGroup;
+import org.fenixedu.academic.domain.accessControl.AllAlumniGroup;
+import org.fenixedu.academic.domain.accounting.Entry;
+import org.fenixedu.academic.domain.accounting.Event;
+import org.fenixedu.academic.domain.accounting.paymentCodes.AccountingEventPaymentCode;
+import org.fenixedu.academic.domain.contacts.EmailAddress;
+import org.fenixedu.academic.domain.contacts.WebAddress;
+import org.fenixedu.academic.domain.degreeStructure.BibliographicReferences.BibliographicReference;
+import org.fenixedu.academic.domain.degreeStructure.CourseGroup;
+import org.fenixedu.academic.domain.degreeStructure.DegreeModule;
+import org.fenixedu.academic.domain.degreeStructure.ProgramConclusion;
+import org.fenixedu.academic.domain.space.SpaceUtils;
+import org.fenixedu.academic.domain.student.Registration;
+import org.fenixedu.academic.domain.student.Student;
+import org.fenixedu.academic.domain.student.curriculum.ICurriculum;
+import org.fenixedu.academic.domain.student.curriculum.ICurriculumEntry;
+import org.fenixedu.academic.domain.studentCurriculum.CurriculumGroup;
+import org.fenixedu.academic.domain.studentCurriculum.Dismissal;
+import org.fenixedu.academic.domain.time.calendarStructure.AcademicInterval;
+import org.fenixedu.academic.domain.util.icalendar.CalendarFactory;
+import org.fenixedu.academic.domain.util.icalendar.ClassEventBean;
+import org.fenixedu.academic.domain.util.icalendar.EvaluationEventBean;
+import org.fenixedu.academic.domain.util.icalendar.EventBean;
+import org.fenixedu.academic.dto.InfoExam;
+import org.fenixedu.academic.dto.InfoExecutionCourse;
+import org.fenixedu.academic.dto.InfoLesson;
+import org.fenixedu.academic.dto.InfoLessonInstance;
+import org.fenixedu.academic.dto.InfoOccupation;
+import org.fenixedu.academic.dto.InfoShowOccupation;
+import org.fenixedu.academic.dto.InfoSiteRoomTimeTable;
+import org.fenixedu.academic.dto.InfoWrittenEvaluation;
+import org.fenixedu.academic.dto.InfoWrittenTest;
+import org.fenixedu.academic.dto.SummariesManagementBean;
+import org.fenixedu.academic.service.factory.RoomSiteComponentBuilder;
+import org.fenixedu.academic.service.services.exceptions.FenixServiceException;
+import org.fenixedu.academic.service.services.exceptions.InvalidArgumentsServiceException;
+import org.fenixedu.academic.service.services.student.EnrolStudentInWrittenEvaluation;
+import org.fenixedu.academic.service.services.student.UnEnrollStudentInWrittenEvaluation;
+import org.fenixedu.academic.service.services.teacher.CreateSummary;
+import org.fenixedu.academic.service.services.teacher.DeleteSummary;
+import org.fenixedu.academic.service.services.commons.ReadCurricularCourseScopesByExecutionCourseID;
+import org.fenixedu.academic.service.services.exceptions.FenixServiceException;
+import org.fenixedu.academic.ui.struts.action.ICalendarSyncPoint;
+import org.fenixedu.academic.util.Bundle;
+import org.fenixedu.academic.util.ContentType;
+import org.fenixedu.academic.util.EvaluationType;
+import org.fenixedu.academic.util.HourMinuteSecond;
+import org.fenixedu.commons.i18n.LocalizedString;
+import org.fenixedu.bennu.core.domain.Bennu;
+import org.fenixedu.bennu.core.domain.User;
+import org.fenixedu.bennu.core.i18n.BundleUtil;
+import org.fenixedu.bennu.core.security.Authenticate;
+import org.fenixedu.bennu.oauth.annotation.OAuthEndpoint;
+import org.fenixedu.commons.i18n.I18N;
+import org.fenixedu.commons.i18n.LocalizedString;
+import org.fenixedu.commons.stream.StreamUtils;
+import org.fenixedu.spaces.domain.BlueprintFile;
+import org.fenixedu.spaces.domain.Space;
+import org.fenixedu.spaces.services.SpaceBlueprintsDWGProcessor;
+import org.joda.time.DateTime;
+import org.joda.time.DateTimeFieldType;
+import org.joda.time.Partial;
+import org.joda.time.TimeOfDay;
+import org.joda.time.YearMonthDay;
+import org.joda.time.format.DateTimeFormat;
+import org.joda.time.format.DateTimeFormatter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.google.common.base.CaseFormat;
+import com.google.common.base.Function;
+import com.google.common.base.Joiner;
+import com.google.common.base.Strings;
+import com.google.common.collect.FluentIterable;
+import com.google.common.collect.Ordering;
+import com.google.common.io.ByteStreams;
+import com.google.common.net.HttpHeaders;
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonPrimitive;
+
+import net.fortuna.ical4j.model.Calendar;
+import pt.ist.fenixedu.contracts.domain.accessControl.ActiveEmployees;
+import pt.ist.fenixedu.integration.FenixEduIstIntegrationConfiguration;
+import pt.ist.fenixedu.integration.api.beans.FenixCalendar;
+import pt.ist.fenixedu.integration.api.beans.FenixCalendar.FenixCalendarEvent;
+import pt.ist.fenixedu.integration.api.beans.FenixCalendar.FenixClassEvent;
+import pt.ist.fenixedu.integration.api.beans.FenixCalendar.FenixEvaluationEvent;
+import pt.ist.fenixedu.integration.api.beans.FenixCourse;
+import pt.ist.fenixedu.integration.api.beans.FenixCurricularGroup;
+import pt.ist.fenixedu.integration.api.beans.FenixCurriculum;
+import pt.ist.fenixedu.integration.api.beans.FenixPayment;
+import pt.ist.fenixedu.integration.api.beans.FenixPayment.PaymentEvent;
+import pt.ist.fenixedu.integration.api.beans.FenixPayment.PendingEvent;
+import pt.ist.fenixedu.integration.api.beans.FenixPerson;
+import pt.ist.fenixedu.integration.api.beans.FenixPerson.FenixPhoto;
+import pt.ist.fenixedu.integration.api.beans.FenixPerson.FenixRole;
+import pt.ist.fenixedu.integration.api.beans.FenixPersonCourses;
+import pt.ist.fenixedu.integration.api.beans.FenixPersonCourses.FenixEnrolment;
+import pt.ist.fenixedu.integration.api.beans.publico.FenixAbout;
+import pt.ist.fenixedu.integration.api.beans.publico.FenixCourseEvaluation;
+import pt.ist.fenixedu.integration.api.beans.publico.FenixCourseExtended;
+import pt.ist.fenixedu.integration.api.beans.publico.FenixCourseExtended.FenixCompetence;
+import pt.ist.fenixedu.integration.api.beans.publico.FenixCourseExtended.FenixCompetence.BiblioRef;
+import pt.ist.fenixedu.integration.api.beans.publico.FenixCourseGroup;
+import pt.ist.fenixedu.integration.api.beans.publico.FenixCourseStudents;
+import pt.ist.fenixedu.integration.api.beans.publico.FenixDegree;
+import pt.ist.fenixedu.integration.api.beans.publico.FenixDegreeExtended;
+import pt.ist.fenixedu.integration.api.beans.publico.FenixDegreeExtended.FenixDegreeInfo;
+import pt.ist.fenixedu.integration.api.beans.publico.FenixDegreeExtended.FenixTeacher;
+import pt.ist.fenixedu.integration.api.beans.publico.FenixDomainModel;
+import pt.ist.fenixedu.integration.api.beans.publico.FenixExecutionCourse;
+import pt.ist.fenixedu.integration.api.beans.publico.FenixPeriod;
+import pt.ist.fenixedu.integration.api.beans.publico.FenixRoomEvent;
+import pt.ist.fenixedu.integration.api.beans.publico.FenixSchedule;
+import pt.ist.fenixedu.integration.api.beans.publico.FenixSpace;
+import pt.ist.fenixedu.integration.api.infra.FenixAPIFromExternalServer;
+import pt.ist.fenixedu.integration.dto.PersonInformationBean;
+import pt.ist.fenixedu.integration.service.services.externalServices.CreatePreEnrolment;
+import pt.ist.fenixframework.DomainObject;
+import pt.ist.fenixframework.FenixFramework;
 import static org.fenixedu.academic.dto.SummariesManagementBean.SummaryType.NORMAL_SUMMARY;
 
 import java.io.IOException;
@@ -227,11 +425,8 @@ import pt.ist.fenixedu.integration.dto.PersonInformationBean;
 import pt.ist.fenixedu.integration.service.services.externalServices.CreatePreEnrolment;
 import pt.ist.fenixframework.DomainObject;
 import pt.ist.fenixframework.FenixFramework;
-
 @Path("/fenix/v1")
 public class FenixAPIv1 {
-
-    private static final Logger logger = LoggerFactory.getLogger(FenixAPIv1.class);
 
     public final static String PERSONAL_SCOPE = "INFO";
     public final static String SCHEDULE_SCOPE = "SCHEDULE";
@@ -239,28 +434,23 @@ public class FenixAPIv1 {
     public final static String CURRICULAR_SCOPE = "CURRICULAR";
     public final static String PAYMENTS_SCOPE = "PAYMENTS";
     public final static String DEGREE_CURRICULAR_MANAGEMENT = "DEGREE_CURRICULAR_MANAGEMENT";
-
     public final static String JSON_UTF8 = "application/json; charset=utf-8";
-
     public final static String dayPattern = "dd/MM/yyyy";
     public final static String dayHourPattern = "dd/MM/yyyy HH:mm";
     public final static String hourPattern = "HH:mm";
     public final static String dayHourSecondPattern = "yyyy-MM-dd HH:mm:ss";
-
     public static final DateTimeFormatter formatDayHour = DateTimeFormat.forPattern(dayHourPattern);
     public static final DateTimeFormatter formatDay = DateTimeFormat.forPattern(dayPattern);
     public static final DateTimeFormatter formatHour = DateTimeFormat.forPattern(hourPattern);
     public static final DateTimeFormatter formatDayHourSecond = DateTimeFormat.forPattern(dayHourSecondPattern);
-
-    private static Gson gson;
-
-    private static final String ENROL = "yes";
-    private static final String UNENROL = "no";
-
     public final static String ROLE_TEACHER = "TEACHER";
     public final static String ROLE_STUDENT = "STUDENT";
     public final static String ROLE_EMPLOYEE = "EMPLOYEE";
     public final static String ROLE_ALUMNI = "ALUMNI";
+    private static final Logger logger = LoggerFactory.getLogger(FenixAPIv1.class);
+    private static final String ENROL = "yes";
+    private static final String UNENROL = "no";
+    private static Gson gson;
 
     static {
         gson = new GsonBuilder().setPrettyPrinting().create();
@@ -299,9 +489,7 @@ public class FenixAPIv1 {
     /**
      * It will return name, istid, campus, email, photo and contacts
      *
-
      * @return only public contacts and photo are available
-
      */
     @GET
     @Produces(JSON_UTF8)
@@ -349,7 +537,7 @@ public class FenixAPIv1 {
         List<String> workWebAdresses = pib.getWorkWebAdresses();
         final FenixPhoto photo = getPhoto(person);
 
-        return new FenixPerson(campus, roles, photo, name, displayName, gender, birthday, username, email, institutionalEmail, 
+        return new FenixPerson(campus, roles, photo, name, displayName, gender, birthday, username, email, institutionalEmail,
                 personalEmails,
                 workEmails,
                 personalWebAdresses, workWebAdresses);
@@ -358,10 +546,8 @@ public class FenixAPIv1 {
     /**
      * Person courses (enrolled if student and teaching if teacher)
      *
-
      * @param academicTerm
      * @return enrolled courses and teaching courses
-
      */
     @OAuthEndpoint(CURRICULAR_SCOPE)
     @GET
@@ -412,7 +598,7 @@ public class FenixAPIv1 {
     public void fillEnrolments(final Person person, List<FenixEnrolment> enrolments, ExecutionSemester executionSemester) {
         final Student foundStudent = person.getStudent();
 
-        if(foundStudent != null) {
+        if (foundStudent != null) {
             for (Registration registration : foundStudent.getAllRegistrations()) {
                 for (Enrolment enrolment : registration.getEnrolments(executionSemester)) {
                     final ExecutionCourse executionCourse = enrolment.getExecutionCourseFor(executionSemester);
@@ -427,7 +613,7 @@ public class FenixAPIv1 {
     public void fillAttendingCourses(final Person person, List<FenixCourse> attendingCourses, ExecutionSemester executionSemester) {
         final Student foundStudent = person.getStudent();
 
-        if(foundStudent != null) {
+        if (foundStudent != null) {
             foundStudent.getRegistrationsSet().stream()
                     .flatMap(r -> r.getAttendingExecutionCoursesFor(executionSemester).stream())
                     .map(FenixCourse::new)
@@ -436,10 +622,6 @@ public class FenixAPIv1 {
     }
 
     /* CALENDARS */
-
-    private enum EventType {
-        CLASS, EVALUATION;
-    }
 
     private FenixCalendar getFenixCalendar(String academicTerm, List<EventBean> eventBeans, EventType eventType) {
 
@@ -464,27 +646,27 @@ public class FenixAPIv1 {
             FenixCalendarEvent event = null;
 
             switch (eventType) {
-            case CLASS:
-                final Shift classShift = ((ClassEventBean) eventBean).getClassShift();
-                event = new FenixClassEvent(eventPeriod, rooms, title, new FenixCourse(classShift.getExecutionCourse()));
-                break;
+                case CLASS:
+                    final Shift classShift = ((ClassEventBean) eventBean).getClassShift();
+                    event = new FenixClassEvent(eventPeriod, rooms, title, new FenixCourse(classShift.getExecutionCourse()));
+                    break;
 
-            case EVALUATION:
-                Set<FenixCourse> fenixCourses =
-                        FluentIterable.from(((EvaluationEventBean) eventBean).getCourses())
-                                .transform(new Function<ExecutionCourse, FenixCourse>() {
+                case EVALUATION:
+                    Set<FenixCourse> fenixCourses =
+                            FluentIterable.from(((EvaluationEventBean) eventBean).getCourses())
+                                    .transform(new Function<ExecutionCourse, FenixCourse>() {
 
-                                    @Override
-                                    public FenixCourse apply(ExecutionCourse course) {
-                                        return new FenixCourse(course);
-                                    }
+                                        @Override
+                                        public FenixCourse apply(ExecutionCourse course) {
+                                            return new FenixCourse(course);
+                                        }
 
-                                }).toSet();
+                                    }).toSet();
 
-                FenixSpace assignedRoom = FenixSpace.getSimpleSpace(((EvaluationEventBean) eventBean).getAssignedRoom());
+                    FenixSpace assignedRoom = FenixSpace.getSimpleSpace(((EvaluationEventBean) eventBean).getAssignedRoom());
 
-                event = new FenixEvaluationEvent(eventPeriod, assignedRoom, rooms, title, fenixCourses);
-                break;
+                    event = new FenixEvaluationEvent(eventPeriod, assignedRoom, rooms, title, fenixCourses);
+                    break;
             }
 
             events.add(event);
@@ -527,12 +709,9 @@ public class FenixAPIv1 {
      * calendar of all written evaluations (tests and exams). Available for
      * students and teachers.
      *
-
-     * @param format
-     *            ("calendar" or "json")
+     * @param format ("calendar" or "json")
      * @return If format is "calendar", returns iCal format. If not returns the
-     *         following json.
-
+     * following json.
      */
     @OAuthEndpoint(SCHEDULE_SCOPE)
     @GET
@@ -580,12 +759,9 @@ public class FenixAPIv1 {
     /**
      * calendar of all lessons of students and teachers
      *
-
-     * @param format
-     *            ("calendar" or "json")
+     * @param format ("calendar" or "json")
      * @return If format is "calendar", returns iCal format. If not returns the
-     *         following json.
-
+     * following json.
      */
     @OAuthEndpoint(SCHEDULE_SCOPE)
     @GET
@@ -631,7 +807,7 @@ public class FenixAPIv1 {
             StudentCurricularPlan lastCurricularPlan = registration.getLastStudentCurricularPlan();
 
             String end = null;
-            if (lastCurricularPlan .getEndDate() != null) {
+            if (lastCurricularPlan.getEndDate() != null) {
                 end = lastCurricularPlan.getEndDate().toString(formatDay);
             }
 
@@ -770,7 +946,6 @@ public class FenixAPIv1 {
 
         return new FenixPayment(payed, notPayed);
     }
-
     private String getShortDescriptionForEntry(Entry entry) {
         return BundleUtil.getString(Bundle.ENUMERATION, entry.getEntryType().getName());
     }
@@ -778,16 +953,14 @@ public class FenixAPIv1 {
     /**
      * Written evaluations for students
      *
-
      * @return enrolled and not enrolled student's evaluations
-
      */
     @OAuthEndpoint(EVALUATIONS_SCOPE)
     @GET
     @Path("person/evaluations")
     @Produces(JSON_UTF8)
     public List<FenixCourseEvaluation.WrittenEvaluation> evaluations(@Context HttpServletResponse response,
-            @Context HttpServletRequest request, @Context ServletContext context) {
+                                                                     @Context HttpServletRequest request, @Context ServletContext context) {
 
         Person person = getPerson();
         final Student student = person.getStudent();
@@ -833,8 +1006,8 @@ public class FenixAPIv1 {
     }
 
     private List<FenixCourseEvaluation.WrittenEvaluation> processEvaluation(Evaluation evaluation,
-            Set<ExecutionCourse> executionCourses, final Boolean isEnrolled, final Student student,
-            final ExecutionSemester executionSemester) {
+                                                                            Set<ExecutionCourse> executionCourses, final Boolean isEnrolled, final Student student,
+                                                                            final ExecutionSemester executionSemester) {
 
         List<FenixCourseEvaluation.WrittenEvaluation> evaluations = new ArrayList<FenixCourseEvaluation.WrittenEvaluation>();
 
@@ -860,21 +1033,17 @@ public class FenixAPIv1 {
      * Enrols in evaluation represented by oid if enrol is "yes". unenrols
      * evaluation if enrol is "no".
      *
-
-     * @param oid
-     *            evaluations id
-     * @param enrol
-     *            ( "yes" or "no")
+     * @param oid   evaluations id
+     * @param enrol ( "yes" or "no")
      * @return all evaluations
-
      */
     @OAuthEndpoint(EVALUATIONS_SCOPE)
     @PUT
     @Produces(JSON_UTF8)
     @Path("person/evaluations/{id}")
     public List<FenixCourseEvaluation.WrittenEvaluation> evaluations(@PathParam("id") String oid,
-            @QueryParam("enrol") String enrol, @Context HttpServletResponse response, @Context HttpServletRequest request,
-            @Context ServletContext context) {
+                                                                     @QueryParam("enrol") String enrol, @Context HttpServletResponse response, @Context HttpServletRequest request,
+                                                                     @Context ServletContext context) {
         validateEnrol(enrol);
         WrittenEvaluation eval = getDomainObject(oid, WrittenEvaluation.class);
         try {
@@ -933,7 +1102,6 @@ public class FenixAPIv1 {
     /**
      * generic information about the institution
      *
-
      * @return news and events rss
      */
     @GET
@@ -946,7 +1114,6 @@ public class FenixAPIv1 {
     /**
      * Academic Terms
      *
-
      * @return all the academic terms available to be used in other endpoints as academicTerm query parameter.
      */
     @GET
@@ -991,10 +1158,8 @@ public class FenixAPIv1 {
     /**
      * All information about degrees available
      *
-
      * @param academicTerm
      * @see academicTerms
-     *
      */
     @GET
     @Produces(JSON_UTF8)
@@ -1037,146 +1202,6 @@ public class FenixAPIv1 {
     @Path("shuttle")
     public String shuttle() {
         return FenixAPIFromExternalServer.getShuttle();
-    }
-
-    private static Unit getSectionOrScientificArea(Unit unit) {
-        if (unit == null || unit.isScientificAreaUnit() || unit.isSectionUnit()) {
-            return unit;
-        }
-        return unit.getParentUnits().stream()
-                .map(FenixAPIv1::getSectionOrScientificArea)
-                .filter(Objects::nonNull).findFirst().orElse(null);
-    }
-
-    private static String localizedName(CategoryType type) {
-        return BundleUtil.getString("resources.FenixeduIstIntegrationResources", "label.contract.category.type." + type.getName());
-    }
-
-    private static Duration getDuration(PersonContractSituation s) {
-        return s.getEndDate() != null ? new Duration(s.getBeginDate().toDateTimeAtStartOfDay(), s.getEndDate().toDateTimeAtStartOfDay()) : null;
-    }
-
-    private static Duration getDuration(Contract c) {
-        return c.getEndDate() != null ? new Duration(c.getBeginDate().toDateMidnight(), c.getEndDate().toDateMidnight()) : null;
-    }
-
-    private static Duration getDuration(TeacherAuthorization ta) {
-        ExecutionSemester semester = ta.getExecutionSemester();
-        return new Duration(semester.getBeginLocalDate().toDateTimeAtCurrentTime(), semester.getEndLocalDate().toDateTimeAtCurrentTime());
-    }
-
-    private static boolean overlaps(TeacherAuthorization ta, AcademicInterval interval) {
-        return ta.getExecutionSemester().getAcademicInterval().overlaps(interval);
-    }
-
-    private static boolean overlaps(PersonContractSituation situation, AcademicInterval interval) {
-        try {
-            return situation.getBeginDate() != null && situation.overlaps(interval.toInterval());
-        } catch (Exception e) { //XXX erroneous contract dates
-            return false;
-        }
-    }
-
-    private static <T, C> Optional<C> getLongestLasting(Function<T, C> get, Stream<T> stream, Function<T, Duration> getDuration) {
-        return stream.filter(i->get.apply(i)!=null).collect(Collectors.groupingBy(get, Collectors.reducing(Duration.ZERO, getDuration, Duration::plus)))
-                .entrySet().stream().max(Comparator.comparing(Map.Entry::getValue)).map(Map.Entry::getKey);
-    }
-
-    private static Unit getPersonDepartmentArea(Employee employee, AcademicInterval interval, boolean direct, Unit defaultArea) {
-        if (employee != null) {
-            Stream<Contract> contracts = employee.getWorkingContracts(interval.getBeginYearMonthDayWithoutChronology(), interval.getEndYearMonthDayWithoutChronology()).stream();
-            Optional<Unit> workingUnit = getLongestLasting(Contract::getWorkingUnit, contracts, FenixAPIv1::getDuration);
-            if (!direct) {
-                workingUnit = workingUnit.map(FenixAPIv1::getSectionOrScientificArea);
-            }
-            if (workingUnit.isPresent()) {
-                return workingUnit.get();
-            }
-        }
-        return defaultArea;
-    }
-
-    private static FenixDepartment.FenixDepartmentMember getFenixDepartmentMember(Person person) {
-        String username = person.getUsername();
-        String name = person.getDisplayName();
-        String email = person.getEmailForSendingEmails();
-        String photo = Avatar.mysteryManUrl(person.getUser());
-        if (person.getProfile() != null) {
-            photo = person.getProfile().getAvatarUrl();
-        }
-
-        return new FenixDepartment.FenixDepartmentMember(username, name, email, photo);
-    }
-
-    private static FenixDepartment.FenixDepartmentMember getFenixDepartmentTeacher(Department department, Person person, AcademicInterval interval) {
-        FenixDepartment.FenixDepartmentMember member = getFenixDepartmentMember(person);
-
-        Stream<TeacherAuthorization> authorizations = person.getTeacher().getTeacherAuthorizationStream().filter(ta -> overlaps(ta, interval));
-        TeacherCategory category = getLongestLasting(TeacherAuthorization::getTeacherCategory, authorizations, FenixAPIv1::getDuration).get();
-
-        member.setRole(localizedName(CategoryType.TEACHER));
-        member.setCategory(category.getName().getContent());
-        member.setArea(getPersonDepartmentArea(person.getEmployee(), interval, false, department.getDepartmentUnit()).getNameI18n().getContent());
-
-        return member;
-    }
-
-    private static FenixDepartment.FenixDepartmentMember getFenixDepartmentEmployee(Department department, Person person, AcademicInterval interval) {
-        FenixDepartment.FenixDepartmentMember member = getFenixDepartmentMember(person);
-        YearMonthDay begin = interval.getBeginYearMonthDayWithoutChronology();
-        YearMonthDay end = interval.getEndYearMonthDayWithoutChronology();
-
-        CategoryType type = CategoryType.EMPLOYEE;
-        String category = "";
-        Optional<ProfessionalCategory> data = Optional.ofNullable(person.getPersonProfessionalData())
-                .map(PersonProfessionalData::getGiafProfessionalData)
-                .flatMap(gpd -> getLongestLasting(PersonContractSituation::getProfessionalCategory, gpd.getPersonContractSituationsSet().stream().filter(s -> overlaps(s, interval)), FenixAPIv1::getDuration));
-        if (data.isPresent()) {
-            ProfessionalCategory pcat = data.get();
-            type = pcat.getCategoryType();
-            category = pcat.getName().getContent();
-        }
-        String role = localizedName(type);
-        boolean direct = type.equals(CategoryType.EMPLOYEE) || type.equals(CategoryType.GRANT_OWNER);
-        String area = getPersonDepartmentArea(person.getEmployee(), interval, direct, department.getDepartmentUnit()).getNameI18n().getContent();
-
-        member.setRole(role);
-        member.setCategory(category);
-        member.setArea(area);
-
-        return member;
-    }
-
-    private static FenixDepartment getFenixDepartment(Department department, AcademicInterval interval) {
-        String name = department.getNameI18n().getContent();
-        String acronym = department.getAcronym();
-
-        List<Employee> employees = Employee.getAllWorkingEmployees(department, interval.getBeginYearMonthDayWithoutChronology(), interval.getEndYearMonthDayWithoutChronology());
-        Set<Person> employeePeople = employees.stream().filter(Objects::nonNull).map(Employee::getPerson).collect(Collectors.toSet());
-        //XXX Teachers are obtained separately through their TeacherAuthorizations so external teachers are taken into account
-        //XXX Internal teachers with missing authorizations are present in the employee stream and are displayed in the same way as others
-        List<Teacher> teachers = department.getAllTeachers(interval);
-        Set<Person> teacherPeople = teachers.stream().map(Teacher::getPerson).collect(Collectors.toSet());
-        employeePeople.removeAll(teacherPeople);
-
-        List<FenixDepartment.FenixDepartmentMember> members = new ArrayList<>();
-        teacherPeople.stream().map(p -> getFenixDepartmentTeacher(department, p, interval)).forEach(members::add);
-        employeePeople.stream().map(p -> getFenixDepartmentEmployee(department, p, interval)).forEach(members::add);
-
-        return new FenixDepartment(name, acronym, members);
-    }
-
-    @GET
-    @Produces(JSON_UTF8)
-    @Path("departments/{acronym}")
-    public FenixDepartment departmentByAcronym(@PathParam("acronym") String acronym, @QueryParam("academicTerm") String academicTerm) {
-        final AcademicInterval interval = getAcademicInterval(academicTerm);
-        Optional<Department> department = Bennu.getInstance().getDepartmentsSet().stream().filter(d -> d.getAcronym().equals(acronym)).findFirst();
-        if (department.isPresent()) {
-            return getFenixDepartment(department.get(), interval);
-        } else {
-            throw newApplicationError(Status.NOT_FOUND, "department not found", "department not found");
-        }
     }
 
     @GET
@@ -1247,14 +1272,10 @@ public class FenixAPIv1 {
     }
 
     /**
-     *
      * Retrieves information about degree with id
      *
-
-     * @param oid
-     *            degree id
-     * @param academicTerm
-     *            ("yyyy/yyyy")
+     * @param oid          degree id
+     * @param academicTerm ("yyyy/yyyy")
      */
     @GET
     @Produces(JSON_UTF8)
@@ -1277,17 +1298,14 @@ public class FenixAPIv1 {
     /**
      * Courses for degree with id
      *
-
-     * @param oid
-     *            degree id
-     * @param academicTerm
-     *            ("yyyy/yyyy")
+     * @param oid          degree id
+     * @param academicTerm ("yyyy/yyyy")
      */
     @GET
     @Produces(JSON_UTF8)
     @Path("degrees/{id}/courses")
     public List<FenixExecutionCourse> coursesByODegreesId(@PathParam("id") String oid,
-            @QueryParam("academicTerm") String academicTerm) {
+                                                          @QueryParam("academicTerm") String academicTerm) {
 
         Degree degree = getDomainObject(oid, Degree.class);
 
@@ -1314,18 +1332,16 @@ public class FenixAPIv1 {
     /**
      * Set the previously chosen courses for students
      *
-
-     * @param oid degree id
+     * @param oid           degree id
      * @param academicTerm
      * @param preEnrolments
-     * 
      */
     @POST
     @Produces(JSON_UTF8)
     @Path("degrees/{id}/preEnrolmentsCurricularGroups")
     @OAuthEndpoint(value = DEGREE_CURRICULAR_MANAGEMENT)
     public Response defaultEnrolments(@PathParam("id") String oid, @QueryParam("academicTerm") String academicTerm,
-            JsonObject preEnrolments) {
+                                      JsonObject preEnrolments) {
 
         AcademicInterval academicInterval = getAcademicInterval(academicTerm, true);
         if (academicInterval == null) {
@@ -1400,17 +1416,14 @@ public class FenixAPIv1 {
     /**
      * Courses group structure for degree with id
      *
-
-     * @param oid
-     *            degree id
+     * @param oid          degree id
      * @param academicTerm
-     * 
      */
     @GET
     @Produces(JSON_UTF8)
     @Path("degrees/{id}/curricularGroups")
     public List<FenixCurricularGroup> curricularGroupsByDegreeId(@PathParam("id") String oid,
-            @QueryParam("academicTerm") String academicTerm) {
+                                                                 @QueryParam("academicTerm") String academicTerm) {
 
         Degree degree = getDomainObject(oid, Degree.class);
         Set<ExecutionSemester> executionSemesters = getExecutionSemesters(academicTerm);
@@ -1418,17 +1431,17 @@ public class FenixAPIv1 {
 
         Set<FenixCurricularGroup> result = new HashSet<FenixCurricularGroup>();
         degree.getDegreeCurricularPlansForYear(executionYear).stream().filter(DegreeCurricularPlan::isActive).forEach(dcp -> {
-            result.add(new FenixCurricularGroup(dcp.getRoot(), executionYear));
-            addCurricularGroup(executionYear, result, dcp.getRoot());
+            result.add(new FenixCurricularGroup(dcp.getRoot(), executionYear, executionSemesters.iterator().next()));
+            addCurricularGroup(executionYear, result, dcp.getRoot(), executionSemesters.iterator().next());
         });
         return new ArrayList<FenixCurricularGroup>(result);
     }
 
-    private void addCurricularGroup(ExecutionYear executionYear, Set<FenixCurricularGroup> result, CourseGroup group) {
+    private void addCurricularGroup(ExecutionYear executionYear, Set<FenixCurricularGroup> result, CourseGroup group, ExecutionSemester executionSemester) {
         for (DegreeModule degreeModule : group.getChildDegreeModulesValidOn(executionYear)) {
             if (degreeModule.isCourseGroup()) {
-                result.add(new FenixCurricularGroup((CourseGroup) degreeModule, executionYear));
-                addCurricularGroup(executionYear, result, (CourseGroup) degreeModule);
+                result.add(new FenixCurricularGroup((CourseGroup) degreeModule, executionYear, executionSemester));
+                addCurricularGroup(executionYear, result, (CourseGroup) degreeModule,executionSemester);
             }
         }
     }
@@ -1436,37 +1449,91 @@ public class FenixAPIv1 {
     /**
      * Curricular courses for degree with id
      *
-
-     * @param oid
-     *            degree id
+     * @param oid          degree id
      * @param academicTerm
-     * 
      */
     @GET
     @Produces(JSON_UTF8)
-    @Path("degrees/{id}/curricularCourses")
-    public String curricularCoursesByDegreeId(@PathParam("id") String oid, @QueryParam("academicTerm") String academicTerm) {
+    @Path("degrees/{id}/{year}/curricularCourses")
+    public String curricularCoursesByDegreeId(@PathParam("id") String oid, @PathParam("year") String year, @QueryParam("academicTerm") String academicTerm) {
 
         Degree degree = getDomainObject(oid, Degree.class);
 
         Set<ExecutionSemester> executionSemesters = getExecutionSemesters(academicTerm);
         ExecutionYear executionYear = executionSemesters.iterator().next().getExecutionYear();
+        CurricularYear curricularYear = CurricularYear.readByYear(Integer.parseInt(year));
 
         final Set<CurricularCourse> curricularCourses = new HashSet<CurricularCourse>();
+        DegreeCurricularPlan degreeCurricularPlan = null;
+
 
         degree.getDegreeCurricularPlansForYear(executionYear).stream().filter(DegreeCurricularPlan::isActive)
                 .forEach(plan -> addCurricularCourses(plan.getRoot(), curricularCourses, executionSemesters));
 
         return curricularCourses.stream().map(cc -> {
+
             JsonObject object = new JsonObject();
-            object.addProperty("id", cc.getExternalId());
-            object.addProperty("name", cc.getName());
+           /* final Set<DegreeModule> degreeModules =
+                    cc.getDegreeCurricularPlan().getAllDegreeModules();
+            for (DegreeModule d : degreeModules){
+                List<CurricularRule> rule=d.getParticipatingCurricularRules();
+                for (CurricularRule r :
+                        rule) {*/
+
+            for (ExecutionSemester e :
+                    executionSemesters) {
+                if (cc.hasScopeInGivenSemesterAndCurricularYearInDCP(curricularYear, cc.getDegreeCurricularPlan(), e)) {
+
+                    object.addProperty("executionSemesters", e.toString());
+                    object.addProperty("academic year", e.getYear());
+
+                    object.addProperty("year", year);
+                    object.addProperty("id", cc.getExternalId());
+
+                    object.addProperty("name", cc.getName());
+                    object.addProperty("acronym", cc.getAcronym());
+                    object.addProperty("isOptional", cc.isOptionalCurricularCourse());
+                    object.addProperty("isMandatory", cc.getMandatory());
+                    object.addProperty("isSemestrial", cc.isSemestrial(executionYear));
+                    object.addProperty("Prerequesites", cc.getPrerequisites());
+                    object.addProperty("id1", cc.getExecutionCoursesByExecutionYear(executionYear).toString());
+                    for (final CurricularRule curricularRule :
+                    cc.getCurricularRulesSet()) {
+                        if(curricularRule.isCompositeRule()){
+                            int i=0;
+                            for (final CurricularRule curricularRule1:
+                                    ((CompositeRule)curricularRule).getCurricularRulesSet()) {
+                                object.addProperty("Size",((CompositeRule)curricularRule).getCurricularRulesSet().size());
+
+                                if (curricularRule1 instanceof RestrictionDoneDegreeModule) {
+                                    final RestrictionDoneDegreeModule restrictionDone = (RestrictionDoneDegreeModule) curricularRule1;
+                                    object.addProperty("Precedence"+i, restrictionDone.getPrecedenceDegreeModule().getName());
+                                }
+                                i++;
+
+
+                            }
+
+                            object.addProperty("Logic",((CompositeRule)curricularRule).getCompositeRuleType().toString());//);
+                               }
+                        if (curricularRule instanceof RestrictionDoneDegreeModule) {
+                            final RestrictionDoneDegreeModule restrictionDone = (RestrictionDoneDegreeModule) curricularRule;
+                            object.addProperty("Precedence", restrictionDone.getPrecedenceDegreeModule().getName());
+                        }
+
+
+
+                    }
+                }
+            }
+
+
             return object;
         }).collect(StreamUtils.toJsonArray()).toString();
     }
 
     private void addCurricularCourses(final CourseGroup courseGroup, final Set<CurricularCourse> curricularCourses,
-            final Set<ExecutionSemester> executionSemesters) {
+                                      final Set<ExecutionSemester> executionSemesters) {
         for (ExecutionSemester executionSemester : executionSemesters) {
             for (DegreeModule degreeModule : courseGroup.getChildDegreeModulesValidOn(executionSemester)) {
                 if (degreeModule.isLeaf()) {
@@ -1501,7 +1568,7 @@ public class FenixAPIv1 {
     }
 
     private void addExecutionCourses(final CourseGroup courseGroup, final Collection<ExecutionCourse> executionCourseViews,
-            final ExecutionSemester... executionPeriods) {
+                                     final ExecutionSemester... executionPeriods) {
         for (final org.fenixedu.academic.domain.degreeStructure.Context context : courseGroup.getChildContextsSet()) {
             for (final ExecutionSemester executionSemester : executionPeriods) {
                 if (context.isValid(executionSemester)) {
@@ -1534,9 +1601,7 @@ public class FenixAPIv1 {
     /**
      * Detailed information about course
      *
-
-     * @param oid
-     *            course id
+     * @param oid course id
      * @return
      */
     @GET
@@ -1581,7 +1646,7 @@ public class FenixAPIv1 {
             for (CurricularCourse curricularCourse : entry.getValue()) {
                 String id = curricularCourse.getDegree().getExternalId();
                 String dName = curricularCourse.getDegree().getPresentationName();
-                String dacronym = curricularCourse.getDegree().getSigla();
+                String dacronym = curricularCourse.getAcronym();
 
                 degrees.add(new FenixCourseExtended.FenixCompetence.Degree(id, dName, dacronym));
             }
@@ -1615,9 +1680,7 @@ public class FenixAPIv1 {
     /**
      * Retrieve groups for course given by oid
      *
-
-     * @param oid
-     *            course id
+     * @param oid course id
      */
     @GET
     @Produces(JSON_UTF8)
@@ -1637,40 +1700,15 @@ public class FenixAPIv1 {
     }
 
     /**
-     * Returns announcements for course by id
-     *
-
-     * @param oid
-     *            course id
-     * @return
-     */
-    @GET
-    @Produces(JSON_UTF8)
-    @Path("courses/{id}/announcements")
-    public List<FenixCourseAnnouncement> courseAnnouncementsByOid(@PathParam("id") String oid) {
-        final ExecutionCourse executionCourse = getDomainObject(oid, ExecutionCourse.class);
-
-        List<FenixCourseAnnouncement> announcements = executionCourse.getSite().getCategoriesSet().stream()
-                .filter(category -> category.getSlug().equals("announcement"))
-                .flatMap(category -> category.getPostsSet().stream())
-                .filter(post -> post.isVisible() && post.getCanViewGroup().isMember(null))
-                .map(FenixCourseAnnouncement::new)
-                .collect(Collectors.toList());
-
-        return announcements;
-    }
-
-    /**
      * Returns summaries for course by id
      *
-
-     * @param oid
-     *            course id
+     * @param oid course id
      * @return
      */
     @GET
     @Produces(JSON_UTF8)
     @Path("courses/{id}/summaries")
+    @OAuthEndpoint(PERSONAL_SCOPE)
     public List<FenixLessonSummary> summariesCoursesByOid(@PathParam("id") String oid) {
         final ExecutionCourse executionCourse = getDomainObject(oid, ExecutionCourse.class);
         List<FenixLessonSummary> summaries = new ArrayList<>();
@@ -1692,26 +1730,23 @@ public class FenixAPIv1 {
     /**
      * Adds a summary for a lesson in a course by id
      *
-
-     * @param oid
-     *            course id
-     * @param summaryInfo
-     *            JSON object containing the summary info:
-     *              {
-     *                  "shift": "shift_id",
-     *                  "date": "yyyy-MM-dd HH:mm:ss",
-     *                  "room": "room_id",
-     *                  "taught": true/false,
-     *                  "attendance": 0,
-     *                  "title": {
-     *                      "pt-PT": "pt title",
-     *                      "en-GB": "en title"
-     *                  },
-     *                  "content": {
-     *                      "pt-PT": "pt content",
-     *                      "en-GB": "en content"
-     *                  }
-     *              }
+     * @param oid         course id
+     * @param summaryInfo JSON object containing the summary info:
+     *                    {
+     *                    "shift": "shift_id",
+     *                    "date": "yyyy-MM-dd HH:mm:ss",
+     *                    "room": "room_id",
+     *                    "taught": true/false,
+     *                    "attendance": 0,
+     *                    "title": {
+     *                    "pt-PT": "pt title",
+     *                    "en-GB": "en title"
+     *                    },
+     *                    "content": {
+     *                    "pt-PT": "pt content",
+     *                    "en-GB": "en content"
+     *                    }
+     *                    }
      * @return
      */
     @POST
@@ -1731,26 +1766,23 @@ public class FenixAPIv1 {
     /**
      * Edits a summary for a lesson in a course by id
      *
-
-     * @param oid
-     *            course id
-     * @param summaryInfo
-     *            JSON object containing the summary info:
-     *              {
-     *                  "shift": "shift_id",
-     *                  "date": "yyyy-MM-dd HH:mm:ss",
-     *                  "room": "room_id",
-     *                  "taught": true/false,
-     *                  "attendance": 0,
-     *                  "title": {
-     *                      "pt-PT": "pt title",
-     *                      "en-GB": "en title"
-     *                  },
-     *                  "content": {
-     *                      "pt-PT": "pt content",
-     *                      "en-GB": "en content"
-     *                  }
-     *              }
+     * @param oid         course id
+     * @param summaryInfo JSON object containing the summary info:
+     *                    {
+     *                    "shift": "shift_id",
+     *                    "date": "yyyy-MM-dd HH:mm:ss",
+     *                    "room": "room_id",
+     *                    "taught": true/false,
+     *                    "attendance": 0,
+     *                    "title": {
+     *                    "pt-PT": "pt title",
+     *                    "en-GB": "en title"
+     *                    },
+     *                    "content": {
+     *                    "pt-PT": "pt content",
+     *                    "en-GB": "en content"
+     *                    }
+     *                    }
      * @return
      */
     @PUT
@@ -1767,7 +1799,7 @@ public class FenixAPIv1 {
         });
     }
 
-    private FenixLessonSummary addOrUpdateSummary(String courseOid, JsonObject summaryInfo, Consumer<SummariesManagementBean> service)  {
+    private FenixLessonSummary addOrUpdateSummary(String courseOid, JsonObject summaryInfo, Consumer<SummariesManagementBean> service) {
         final String room, shiftId, date;
         final Boolean taught;
         final int attendance;
@@ -1815,7 +1847,7 @@ public class FenixAPIv1 {
     }
 
     private SummariesManagementBean fillSummaryManagementBean(ExecutionCourse executionCourse, Shift shift, Space space,
-            String date, JsonObject title, JsonObject content, Boolean taught, int attendance) {
+                                                              String date, JsonObject title, JsonObject content, Boolean taught, int attendance) {
 
         LocalizedString titleMLS, contentMLS;
         try {
@@ -1856,16 +1888,13 @@ public class FenixAPIv1 {
     /**
      * Deletes a summary in a lesson of a course by id
      *
-
-     * @param oid
-     *            course id
-     * @param summaryInfo
-     *            JSON object containing the summary info:
-     *              {
-     *                  "shift": "shift_id",
-     *                  "date": "yyyy-MM-dd HH:mm:ss",
-     *                  "room": "room_id",
-     *              }
+     * @param oid         course id
+     * @param summaryInfo JSON object containing the summary info:
+     *                    {
+     *                    "shift": "shift_id",
+     *                    "date": "yyyy-MM-dd HH:mm:ss",
+     *                    "room": "room_id",
+     *                    }
      * @return
      */
     @DELETE
@@ -1890,9 +1919,9 @@ public class FenixAPIv1 {
         YearMonthDay lessonDate = lessonDateTime.toYearMonthDay();
 
         Optional<LessonInstance> lessonInstance = shift.getAssociatedLessonsSet().stream()
-                                                       .map(l -> l.getLessonInstanceFor(lessonDate))
-                                                       .filter(l -> l != null && l.getRoom().equals(space))
-                                                       .findFirst();
+                .map(l -> l.getLessonInstanceFor(lessonDate))
+                .filter(l -> l != null && l.getRoom().equals(space))
+                .findFirst();
         if (!lessonInstance.isPresent()) {
             throw newApplicationError(Status.PRECONDITION_FAILED, "invalid parameters", "invalid lesson date or room");
         }
@@ -1913,9 +1942,7 @@ public class FenixAPIv1 {
     /**
      * All students for course by id
      *
-
-     * @param oid
-     *            course id
+     * @param oid course id
      * @return
      */
     @GET
@@ -1927,11 +1954,9 @@ public class FenixAPIv1 {
     }
 
     /**
-     *
      * Returns evaluations for course by id (Test, Exams, Project, AdHoc,
      * OnlineTest)
      *
-
      * @param oid
      * @return
      */
@@ -1985,12 +2010,12 @@ public class FenixAPIv1 {
     }
 
     private FenixCourseEvaluation.WrittenEvaluation getWrittenEvaluationJSON(WrittenEvaluation writtenEvaluation,
-            ExecutionCourse executionCourse) {
+                                                                             ExecutionCourse executionCourse) {
         return getWrittenEvaluationJSON(writtenEvaluation, executionCourse, null, null);
     }
 
     private FenixCourseEvaluation.WrittenEvaluation getWrittenEvaluationJSON(WrittenEvaluation writtenEvaluation,
-            ExecutionCourse executionCourse, Boolean isEnrolled, Student student) {
+                                                                             ExecutionCourse executionCourse, Boolean isEnrolled, Student student) {
         String name = writtenEvaluation.getPresentationName();
         EvaluationType type = writtenEvaluation.getEvaluationType();
 
@@ -2044,7 +2069,6 @@ public class FenixAPIv1 {
     /**
      * All lessons and lesson period of course by id
      *
-
      * @param oid
      * @return
      */
@@ -2059,7 +2083,6 @@ public class FenixAPIv1 {
     /**
      * Campus spaces
      *
-
      * @return
      */
     @GET
@@ -2079,8 +2102,7 @@ public class FenixAPIv1 {
      * Space information regarding space type (Campus, Building, Floor or Room)
      *
      * @param oid
-     * @param day
-     *            ("dd/mm/yyyy")
+     * @param day ("dd/mm/yyyy")
      * @return
      */
     @GET
@@ -2099,8 +2121,7 @@ public class FenixAPIv1 {
      * Returns the blueprint of this space
      *
      * @param oid
-     * @param format
-     *            ("dd/mm/yyyy")
+     * @param format ("dd/mm/yyyy")
      * @return
      */
     @GET
@@ -2231,7 +2252,8 @@ public class FenixAPIv1 {
                     String description = infoGenericEvent.getDescription();
                     String title = infoGenericEvent.getTitle();
                     String start = formatHour.print(infoGenericEvent.getInicio().getTimeInMillis());
-                    String end = formatHour.print(infoGenericEvent.getFim().getTimeInMillis());;
+                    String end = formatHour.print(infoGenericEvent.getFim().getTimeInMillis());
+                    ;
                     String weekday = infoGenericEvent.getDiaSemana().getDiaSemanaString();
                     FenixPeriod period = new FenixPeriod(day + " " + start, day + " " + end);
 
@@ -2320,7 +2342,6 @@ public class FenixAPIv1 {
     /**
      * information about the domain model implemented by this application
      *
-
      * @return domain model
      */
     @GET
@@ -2328,6 +2349,10 @@ public class FenixAPIv1 {
     @Path("domainModel")
     public String domainModel() {
         return new FenixDomainModel().toJSONString();
+    }
+
+    private enum EventType {
+        CLASS, EVALUATION;
     }
 
 }

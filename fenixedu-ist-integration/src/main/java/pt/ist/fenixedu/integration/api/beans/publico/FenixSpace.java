@@ -20,6 +20,7 @@ package pt.ist.fenixedu.integration.api.beans.publico;
 
 import java.util.List;
 import java.util.Set;
+import org.fenixedu.commons.i18n.LocalizedString;
 
 import org.fenixedu.academic.domain.space.SpaceUtils;
 import org.fenixedu.spaces.domain.Space;
@@ -111,6 +112,10 @@ public class FenixSpace {
         @JsonInclude(Include.NON_NULL)
         public String description;
         @JsonInclude(Include.NON_NULL)
+        public Boolean isLaboratory;
+        @JsonInclude(Include.NON_NULL)
+        public LocalizedString isLab;
+        @JsonInclude(Include.NON_NULL)
         public RoomCapacity capacity;
         @JsonInclude(Include.NON_NULL)
         public List<FenixRoomEvent> events;
@@ -128,11 +133,17 @@ public class FenixSpace {
 
         public Room(Space allocationSpace, Boolean withParentAndContainedSpaces) {
             this(allocationSpace, withParentAndContainedSpaces, false, null);
+            isLaboratory=SpaceUtils.isLaboratory(allocationSpace);
+            isLab=allocationSpace.getClassification().getName();//SpaceUtils.isLaboratory(allocationSpace);
+
         }
 
         public Room(Space allocationSpace, Boolean withParentAndContainedSpaces, Boolean withDescriptionAndCapacity,
                 List<FenixRoomEvent> events) {
             super(allocationSpace, withParentAndContainedSpaces);
+            isLaboratory=SpaceUtils.isLaboratory(allocationSpace);
+            isLab=allocationSpace.getClassification().getName();//SpaceUtils.isLaboratory(allocationSpace);
+
             if (withDescriptionAndCapacity) {
                 this.description = allocationSpace.getName();
                 this.capacity =
@@ -144,6 +155,9 @@ public class FenixSpace {
 
         public Room(Space allocationSpace, List<FenixRoomEvent> events) {
             this(allocationSpace, true, true, events);
+            isLaboratory=SpaceUtils.isLaboratory(allocationSpace);
+            isLab=allocationSpace.getClassification().getName();//SpaceUtils.isLaboratory(allocationSpace);
+
         }
     }
 

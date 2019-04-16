@@ -26,6 +26,10 @@ import java.util.Set;
 import org.fenixedu.academic.domain.ExecutionYear;
 import org.fenixedu.academic.domain.degreeStructure.CourseGroup;
 import org.fenixedu.academic.domain.degreeStructure.DegreeModule;
+import org.fenixedu.academic.domain.curricularRules.CurricularRule;
+import org.fenixedu.academic.dto.GenericPair;
+import org.fenixedu.academic.domain.ExecutionSemester;
+
 
 public class FenixCurricularGroup {
     String id;
@@ -33,9 +37,53 @@ public class FenixCurricularGroup {
     Set<String> parentGroupsId;
     List<String> childCoursesId;
 
-    public FenixCurricularGroup(final CourseGroup courseGroup, final ExecutionYear executionYear) {
+    public List<String> getResultLabels() {
+        return resultLabels;
+    }
+
+    public void setResultLabels(List<String> resultLabels) {
+        this.resultLabels = resultLabels;
+    }
+
+    List<String> resultLabels;
+    Double minECTS;
+    Double maxECTS;
+
+    public Double getMaxECTS() {
+        return maxECTS;
+    }
+
+    public void setMaxECTS(Double maxECTS) {
+        this.maxECTS = maxECTS;
+    }
+
+    public Double getMinECTS() {
+        return minECTS;
+    }
+
+    public void setMinECTS(Double minECTS) {
+        this.minECTS = minECTS;
+    }
+
+    public FenixCurricularGroup(final CourseGroup courseGroup, final ExecutionYear executionYear, final ExecutionSemester executionSemester) {
         setId(courseGroup.getExternalId());
         setName(courseGroup.getName());
+        setMinECTS(courseGroup.getMinEctsCredits(executionSemester));
+        setMaxECTS(courseGroup.getMaxEctsCredits(executionSemester));
+
+        List<CurricularRule> curricularRule= courseGroup.getParticipatingCurricularRules();
+        resultLabels = new ArrayList<String>();
+        StringBuilder labelResult = new StringBuilder();
+        labelResult.append(curricularRule.size());
+        for (CurricularRule c:
+                curricularRule) {
+            for (GenericPair<Object, Boolean> p:
+                    c.getLabel()) {
+                labelResult.append(p.toString());
+            }
+
+        }
+        resultLabels.add(labelResult.toString());
 
         parentGroupsId = new HashSet<String>();
         courseGroup.getParentCourseGroups().stream().flatMap(pcg -> pcg.getValidChildContexts(executionYear).stream())
